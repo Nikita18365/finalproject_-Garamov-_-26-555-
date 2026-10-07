@@ -1,7 +1,7 @@
 [project]
 name = "finalproject-garamov-26-555"
 version = "0.1.0"
-description = "Add your description here"
+description = "ValutaTrade Hub"
 readme = "README.md"
 authors = [
     { name = "Nikita Garamov", email = "garamovn@mail.ru" }
@@ -12,11 +12,15 @@ dependencies = [
 ]
 
 [project.scripts]
-finalproject-garamov-26-555 = "finalproject_garamov_26_555:main"
+valutatrade = "valutatrade_hub.cli.interface:main"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "valutatrade_hub"
+module-root = ""
 
 [dependency-groups]
 dev = [
