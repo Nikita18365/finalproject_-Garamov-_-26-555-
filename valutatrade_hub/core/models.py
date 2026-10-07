@@ -2,6 +2,14 @@ import hashlib
 import secrets
 from datetime import datetime
 
+DEFAULT_EXCHANGE_RATES = {
+                          "USD": 1.0,
+                          "EUR": 1.0786,
+                          "BTC": 59337.21,
+                          "RUB": 0.01016,
+                          "ETH": 3720.0,
+                         }
+
 
 class User:
     """Пользователь системы"""
@@ -222,4 +230,116 @@ class Wallet:
         """Преобразовать кошелёк в словарь для json"""
         return {"currency_code": self._currency_code,
                 "balance": self._balance,
+               }
+
+class Portfolio:
+    """Портфель со всеми валютными кошельками пользователя"""
+
+    def __init__(self,
+                 user: User,
+                 wallets: dict[str, Wallet] | None = None,
+                ) -> None:
+        """Инициализация портфеля пользователя"""
+        if not isinstance(user, User):
+            raise TypeError("user должен быть объектом User")
+
+        self._user = user
+        self._user_id = user.user_id
+        self._wallets: dict[str, Wallet] = {}
+
+        if wallets is not None:
+            if not isinstance(wallets, dict):
+                raise TypeError("wallets должен быть словарём")
+
+            for currency_code, wallet in wallets.items():
+                if not isinstance(wallet, Wallet):
+                    raise TypeError("Все значения wallets должны быть объектами Wallet")
+
+                code = currency_code.strip().upper()
+
+                if code != wallet.currency_code:
+                    raise ValueError(
+                                     "Код валюты в словаре должен совпадать "
+                                     "с currency_code кошелька"
+                                    )
+
+                self._wallets[code] = wallet
+
+    @property
+    def user(self) -> User:
+        """Вернуть пользователя, которому принадлежит портфель"""
+        return self._user
+
+    @property
+    def user_id(self) -> int:
+        """Вернуть идентификатор пользователя"""
+        return self._user_id
+
+    @property
+    def wallets(self) -> dict[str, Wallet]:
+        """Вернуть копию словаря кошельков"""
+        return self._wallets.copy()
+
+    def add_currency(self, currency_code: str) -> Wallet:
+        """Добавить новый валютный кошелёк в портфель"""
+        if not isinstance(currency_code, str):
+            raise TypeError("Код валюты должен быть строкой")
+
+        currency_code = currency_code.strip().upper()
+
+        if not currency_code:
+            raise ValueError("Код валюты не может быть пустым")
+
+        if currency_code in self._wallets:
+            raise ValueError(f"Кошелёк '{currency_code}' уже существует")
+
+        wallet = Wallet(currency_code)
+        self._wallets[currency_code] = wallet
+        return wallet
+
+    def get_wallet(self, currency_code: str) -> Wallet | None:
+        """Возврат кошелька к по коду валюты"""
+        if not isinstance(currency_code, str):
+            raise TypeError("Код валюты должен быть строкой")
+
+        currency_code = currency_code.strip().upper()
+
+        if not currency_code:
+            raise ValueError("Код валюты не может быть пустым")
+
+        return self._wallets.get(currency_code)
+
+    def get_total_value(self, base_currency: str = "USD") -> float:
+        """Посчитать общую стоимость портфеля в базовой валюте"""
+        if not isinstance(base_currency, str):
+            raise TypeError("Базовая валюта должна быть строкой")
+
+        base_currency = base_currency.strip().upper()
+
+        if not base_currency:
+            raise ValueError("Базовая валюта не может быть пустой")
+
+        if base_currency not in DEFAULT_EXCHANGE_RATES:
+            raise ValueError(f"Неизвестная базовая валюта '{base_currency}'")
+
+        total_usd = 0.0
+
+        for wallet in self._wallets.values():
+            currency_code = wallet.currency_code
+
+            if currency_code not in DEFAULT_EXCHANGE_RATES:
+                raise ValueError(f"Неизвестный курс валюты '{currency_code}'")
+
+            total_usd += (wallet.balance * DEFAULT_EXCHANGE_RATES[currency_code])
+
+        return total_usd / DEFAULT_EXCHANGE_RATES[base_currency]
+
+    def to_dict(self) -> dict:
+        """Преобразование портфеля в словарь для сохранения в json"""
+        return {
+                "user_id": self._user_id,
+                "wallets": {
+                            currency_code: wallet.to_dict()
+                            for currency_code, wallet in self._wallets.items()
+                           }
                }
