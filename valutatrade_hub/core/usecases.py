@@ -211,3 +211,48 @@ def buy(user: User,
             "new_balance": new_balance,
             "estimated_cost": estimated_cost,
            }
+
+
+def sell(user: User,
+         currency_code: str,
+         amount: float,
+        ) -> dict:
+    """Продажа валюты и обновление портфеля пользователя"""
+
+    if not isinstance(user, User):
+        raise TypeError("user должен быть объектом User")
+
+    currency_code = normalize_currency_code(currency_code)
+    amount = validate_amount(amount)
+
+    if currency_code not in DEFAULT_EXCHANGE_RATES:
+        raise ValueError(f"Не удалось получить курс для {currency_code} -> USD")
+
+    portfolio = get_user_portfolio(user)
+    wallet = portfolio.get_wallet(currency_code)
+
+    if wallet is None:
+        raise ValueError(
+                         f"У вас нет кошелька '{currency_code}'. "
+                         "Добавьте валюту: она создаётся автоматически "
+                         "при первой покупке."
+                        )
+
+    old_balance = wallet.balance
+    rate = DEFAULT_EXCHANGE_RATES[currency_code]
+
+    wallet.withdraw(amount)
+
+    new_balance = wallet.balance
+    estimated_revenue = amount * rate
+
+    _save_user_portfolio(portfolio)
+
+    return {"currency_code": currency_code,
+            "amount": amount,
+            "rate": rate,
+            "base_currency": "USD",
+            "old_balance": old_balance,
+            "new_balance": new_balance,
+            "estimated_revenue": estimated_revenue,
+           }
