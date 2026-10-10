@@ -8,6 +8,7 @@ from valutatrade_hub.core.models import (
                                         )
 from valutatrade_hub.core.utils import (
                                         load_portfolios,
+                                        load_rates,
                                         load_users,
                                         normalize_currency_code,
                                         save_portfolios,
@@ -44,7 +45,7 @@ def _portfolio_from_dict(user: User,
                                                                        ),
                                         balance = wallet_data["balance"]
                                        )
-    return Portfolio(user = user, wallets = wallets)
+    return Portfolio(user_id = portfolio_data["user_id"], wallets = wallets, user = user,)
 
 
 def _save_user_portfolio(portfolio: Portfolio) -> None:
@@ -83,7 +84,7 @@ def register(username: str, password: str) -> User:
                 registration_date = datetime.now().astimezone()
                )
 
-    portfolio = Portfolio(user)
+    portfolio = Portfolio(user_id = user.user_id, user = user,)
     portfolios = load_portfolios()
 
     users.append(user.to_dict())
@@ -138,13 +139,44 @@ def get_user_portfolio(user: User) -> Portfolio:
     raise ValueError("Портфель пользователя не найден")
 
 
+def _get_exchange_rates() -> dict[str, float]:
+    """Получение курсов валют к USD из кеша или заглушки"""
+    rates_data = load_rates()
+    pairs = rates_data.get("pairs", {})
+
+    if not pairs:
+        return DEFAULT_EXCHANGE_RATES.copy()
+
+    exchange_rates = {"USD": 1.0}
+
+    for pair_code, pair_data in pairs.items():
+
+        if not pair_code.endswith("_USD"):
+            continue
+
+        currency_code = pair_code.removesuffix("_USD")
+
+        if isinstance(pair_data, dict):
+            rate = pair_data.get("rate")
+        else:
+            rate = pair_data
+
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)):
+            continue
+
+        exchange_rates[currency_code] = float(rate)
+
+    return exchange_rates
+
+
 def get_portfolio_summary(user: User,
                           base_currency: str = "USD",
                          ) -> dict:
     """Получение информации о портфеле пользователя"""
     base_currency = normalize_currency_code(base_currency)
+    exchange_rates = _get_exchange_rates()
 
-    if base_currency not in DEFAULT_EXCHANGE_RATES:
+    if base_currency not in exchange_rates:
         raise ValueError(f"Неизвестная базовая валюта '{base_currency}'")
 
     portfolio = get_user_portfolio(user)
@@ -153,12 +185,10 @@ def get_portfolio_summary(user: User,
 
     for wallet in portfolio.wallets.values():
         currency_code = wallet.currency_code
-
-        if currency_code not in DEFAULT_EXCHANGE_RATES:
-            raise ValueError(f"Неизвестный курс валюты '{currency_code}'")
-
-        value_usd = (wallet.balance * DEFAULT_EXCHANGE_RATES[currency_code])
-        value_in_base = (value_usd / DEFAULT_EXCHANGE_RATES[base_currency])
+        if currency_code not in exchange_rates:
+            raise ValueError(f"Не найден курс для валюты '{currency_code}'")
+        value_usd = (wallet.balance * exchange_rates[currency_code])
+        value_in_base = (value_usd / exchange_rates[base_currency])
         wallets_info.append({
                              "currency_code": currency_code,
                              "balance": wallet.balance,
@@ -168,7 +198,7 @@ def get_portfolio_summary(user: User,
     return {"username": user.username,
             "base_currency": base_currency,
             "wallets": wallets_info,
-            "total_value": portfolio.get_total_value(base_currency)
+            "total_value": portfolio.get_total_value(base_currency, rates = exchange_rates)
            }
 
 

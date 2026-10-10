@@ -3,24 +3,25 @@ import secrets
 from datetime import datetime
 
 DEFAULT_EXCHANGE_RATES = {
-                          "USD": 1.0,
-                          "EUR": 1.0786,
-                          "BTC": 59337.21,
-                          "RUB": 0.01016,
-                          "ETH": 3720.0,
-                         }
+    "USD": 1.0,
+    "EUR": 1.0786,
+    "BTC": 59337.21,
+    "RUB": 0.01016,
+    "ETH": 3720.0,
+}
 
 
 class User:
     """Пользователь системы"""
 
-    def __init__(self,
-                 user_id: int,
-                 username: str,
-                 hashed_password: str,
-                 salt: str,
-                 registration_date: datetime,
-                ) -> None:
+    def __init__(
+        self,
+        user_id: int,
+        username: str,
+        hashed_password: str,
+        salt: str,
+        registration_date: datetime,
+    ) -> None:
         """Инициализация пользователя"""
         self.user_id = user_id
         self.username = username
@@ -129,29 +130,31 @@ class User:
     def get_user_info(self) -> dict:
         """Возврат информации о пользователе без пароля"""
         return {
-                "user_id": self._user_id,
-                "username": self._username,
-                "registration_date": self._registration_date.isoformat(),
-               }
+            "user_id": self._user_id,
+            "username": self._username,
+            "registration_date": self._registration_date.isoformat(),
+        }
 
     # Небольшой вспомогательный метод, который потом сильно упростит register
     def to_dict(self) -> dict:
         """Преобразование данных пользователя в словарь для сохранения в JSON"""
         return {
-                "user_id": self._user_id,
-                "username": self._username,
-                "hashed_password": self._hashed_password,
-                "salt": self._salt,
-                "registration_date": self._registration_date.isoformat(),
-               }
+            "user_id": self._user_id,
+            "username": self._username,
+            "hashed_password": self._hashed_password,
+            "salt": self._salt,
+            "registration_date": self._registration_date.isoformat(),
+        }
+
 
 class Wallet:
     """Кошелёк пользователя для одной валюты"""
 
-    def __init__(self,
-                 currency_code: str,
-                 balance: float = 0.0,
-                ) -> None:
+    def __init__(
+        self,
+        currency_code: str,
+        balance: float = 0.0,
+    ) -> None:
         """Инициализация валютного кошелька"""
         self.currency_code = currency_code
         self.balance = balance
@@ -213,38 +216,55 @@ class Wallet:
         amount = self._validate_amount(amount)
         if amount > self._balance:
             raise ValueError(
-                             "Недостаточно средств: "
-                             f"доступно {self._balance:.4f} {self._currency_code}, "
-                             f"требуется {amount:.4f} {self._currency_code}"
-                            )
+                "Недостаточно средств: "
+                f"доступно {self._balance:.4f} {self._currency_code}, "
+                f"требуется {amount:.4f} {self._currency_code}"
+            )
 
         self.balance = self._balance - amount
 
     def get_balance_info(self) -> dict:
         """Вернуть информацию о текущем балансе"""
-        return {"currency_code": self._currency_code,
-                "balance": self._balance,
-               }
+        return {
+            "currency_code": self._currency_code,
+            "balance": self._balance,
+        }
 
     def to_dict(self) -> dict:
         """Преобразовать кошелёк в словарь для json"""
-        return {"currency_code": self._currency_code,
-                "balance": self._balance,
-               }
+        return {
+            "currency_code": self._currency_code,
+            "balance": self._balance,
+        }
+
 
 class Portfolio:
     """Портфель со всеми валютными кошельками пользователя"""
 
     def __init__(self,
-                 user: User,
+                 user_id: int,
                  wallets: dict[str, Wallet] | None = None,
+                 user: User | None = None,
                 ) -> None:
-        """Инициализация портфеля пользователя"""
-        if not isinstance(user, User):
-            raise TypeError("user должен быть объектом User")
+        """Инициализировать портфель пользователя"""
 
+        if not isinstance(user_id, int):
+            raise TypeError("user_id должен быть целым числом")
+
+        if user_id <= 0:
+            raise ValueError("user_id должен быть положительным числом")
+
+        if user is not None and not isinstance(user, User):
+            raise TypeError("user должен быть объектом User или None")
+
+        if user is not None and user.user_id != user_id:
+            raise ValueError(
+                             "user_id портфеля не совпадает "
+                             "с идентификатором пользователя"
+                            )
+
+        self._user_id = user_id
         self._user = user
-        self._user_id = user.user_id
         self._wallets: dict[str, Wallet] = {}
 
         if wallets is not None:
@@ -266,7 +286,7 @@ class Portfolio:
                 self._wallets[code] = wallet
 
     @property
-    def user(self) -> User:
+    def user(self) -> User | None:
         """Вернуть пользователя, которому принадлежит портфель"""
         return self._user
 
@@ -309,7 +329,10 @@ class Portfolio:
 
         return self._wallets.get(currency_code)
 
-    def get_total_value(self, base_currency: str = "USD") -> float:
+    def get_total_value(self,
+                        base_currency: str = "USD",
+                        rates: dict[str, float] | None = None,
+                       ) -> float:
         """Посчитать общую стоимость портфеля в базовой валюте"""
         if not isinstance(base_currency, str):
             raise TypeError("Базовая валюта должна быть строкой")
@@ -319,7 +342,9 @@ class Portfolio:
         if not base_currency:
             raise ValueError("Базовая валюта не может быть пустой")
 
-        if base_currency not in DEFAULT_EXCHANGE_RATES:
+        exchange_rates = (DEFAULT_EXCHANGE_RATES if rates is None else rates)
+
+        if base_currency not in exchange_rates:
             raise ValueError(f"Неизвестная базовая валюта '{base_currency}'")
 
         total_usd = 0.0
@@ -327,12 +352,12 @@ class Portfolio:
         for wallet in self._wallets.values():
             currency_code = wallet.currency_code
 
-            if currency_code not in DEFAULT_EXCHANGE_RATES:
-                raise ValueError(f"Неизвестный курс валюты '{currency_code}'")
+            if currency_code not in exchange_rates:
+                raise ValueError(f"Не найден курс для валюты '{currency_code}'")
 
-            total_usd += (wallet.balance * DEFAULT_EXCHANGE_RATES[currency_code])
+            total_usd += (wallet.balance * exchange_rates[currency_code])
 
-        return total_usd / DEFAULT_EXCHANGE_RATES[base_currency]
+        return total_usd/exchange_rates[base_currency]
 
     def to_dict(self) -> dict:
         """Преобразование портфеля в словарь для сохранения в json"""
