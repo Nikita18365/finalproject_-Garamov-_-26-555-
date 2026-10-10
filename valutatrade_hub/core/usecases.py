@@ -12,6 +12,7 @@ from valutatrade_hub.core.utils import (
                                         normalize_currency_code,
                                         save_portfolios,
                                         save_users,
+                                        validate_amount,
                                        )
 
 
@@ -44,6 +45,17 @@ def _portfolio_from_dict(user: User,
                                         balance = wallet_data["balance"]
                                        )
     return Portfolio(user = user, wallets = wallets)
+
+
+def _save_user_portfolio(portfolio: Portfolio) -> None:
+    """Сохранить изменённый портфель пользователя"""
+    portfolios = load_portfolios()
+    for index, portfolio_data in enumerate(portfolios):
+        if portfolio_data.get("user_id") == portfolio.user_id:
+            portfolios[index] = portfolio.to_dict()
+            save_portfolios(portfolios)
+            return
+    raise ValueError("Портфель пользователя не найден")
 
 
 def register(username: str, password: str) -> User:
@@ -157,4 +169,45 @@ def get_portfolio_summary(user: User,
             "base_currency": base_currency,
             "wallets": wallets_info,
             "total_value": portfolio.get_total_value(base_currency)
+           }
+
+
+def buy(user: User,
+        currency_code: str,
+        amount: float,
+       ) -> dict:
+    """Покупка валюты и обновление портфеля пользователя"""
+
+    if not isinstance(user, User):
+        raise TypeError("user должен быть объектом User")
+
+    currency_code = normalize_currency_code(currency_code)
+    amount = validate_amount(amount)
+
+    if currency_code not in DEFAULT_EXCHANGE_RATES:
+        raise ValueError(f"Не удалось получить курс для {currency_code} -> USD")
+
+    portfolio = get_user_portfolio(user)
+    wallet = portfolio.get_wallet(currency_code)
+
+    if wallet is None:
+        wallet = portfolio.add_currency(currency_code)
+
+    old_balance = wallet.balance
+    rate = DEFAULT_EXCHANGE_RATES[currency_code]
+
+    wallet.deposit(amount)
+
+    new_balance = wallet.balance
+    estimated_cost = amount * rate
+
+    _save_user_portfolio(portfolio)
+
+    return {"currency_code": currency_code,
+            "amount": amount,
+            "rate": rate,
+            "base_currency": "USD",
+            "old_balance": old_balance,
+            "new_balance": new_balance,
+            "estimated_cost": estimated_cost,
            }
