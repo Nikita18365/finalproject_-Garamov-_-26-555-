@@ -1,7 +1,13 @@
 import shlex
 
+from prettytable import PrettyTable
+
 from valutatrade_hub.core.models import User
-from valutatrade_hub.core.usecases import login, register
+from valutatrade_hub.core.usecases import (
+                                           get_portfolio_summary,
+                                           login,
+                                           register,
+                                          )
 
 
 def _parse_options(tokens: list[str]) -> dict[str, str]:
@@ -70,6 +76,58 @@ def _handle_login(tokens: list[str]) -> User:
     return user
 
 
+def _handle_show_portfolio(tokens: list[str],
+                           current_user: User | None
+                          ) -> None:
+    """Обработка CLI-команды show-portfolio"""
+
+    if current_user is None:
+        raise ValueError("Сначала выполните login")
+
+    options = _parse_options(tokens)
+    base_currency = options.get("base", "USD")
+    # CLI ничего не рассчитывает. Он поулчает подготовленные данные и оформляет их:
+    summary = get_portfolio_summary(current_user, base_currency)
+    # Бизнес-логика должна оставаться в usecases.py, а CLI только оркестрировать вызовы
+    # и показывать результат
+    base_currency = summary["base_currency"]
+
+    print(
+          f"Портфель пользователя "
+          f"'{summary['username']}' "
+          f"(база: {base_currency}):"
+         )
+
+    if not summary["wallets"]:
+        print("У пользователя пока нет кошельков.")
+        print(
+              f"Итого: "
+              f"{summary['total_value']:,.2f} "
+              f"{base_currency}"
+             )
+        return
+
+    value_column = f"Стоимость, {base_currency}"
+    table = PrettyTable(["Валюта", "Баланс", value_column])
+
+    table.align["Валюта"] = "l"
+    table.align["Баланс"] = "r"
+    table.align[value_column] = "r"
+
+    for wallet in summary["wallets"]:
+        table.add_row([wallet["currency_code"],
+                       f"{wallet['balance']:,.4f}",
+                       f"{wallet['value_in_base']:,.2f}"
+                      ])
+
+    print(table)
+    print(
+          f"Итого: "
+          f"{summary['total_value']:,.2f} "
+          f"{base_currency}"
+         )
+
+
 def _show_help() -> None:
     """Показать список доступных CLI-команд"""
 
@@ -81,6 +139,9 @@ def _show_help() -> None:
     print(
           "  login --username <имя> "
           "--password <пароль>"
+         )
+    print(
+          "  show-portfolio [--base <валюта>]"
          )
     print("  help")
     print("  exit")
@@ -124,6 +185,9 @@ def run() -> None:
 
             elif command == "login":
                 current_user = _handle_login(arguments)
+
+            elif command == "show-portfolio":
+                _handle_show_portfolio(arguments, current_user)
 
             elif command == "help":
                 _show_help()
