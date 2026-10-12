@@ -8,6 +8,7 @@ from valutatrade_hub.core.usecases import (
                                            get_portfolio_summary,
                                            login,
                                            register,
+                                           sell,
                                           )
 
 
@@ -175,6 +176,51 @@ def _handle_buy(tokens: list[str],
          )
 
 
+def _handle_sell(tokens: list[str],
+                 current_user: User | None,
+                ) -> None:
+    """Обработка CLI-команды sell"""
+
+    if current_user is None:
+        raise ValueError("Сначала выполните login")
+
+    options = _parse_options(tokens)
+
+    currency_code = _require_option(options, "currency")
+    amount_text = _require_option(options, "amount")
+
+    try:
+        amount = float(amount_text)
+    except ValueError as error:
+        raise ValueError("'amount' должен быть положительным числом") from error
+
+    result = sell(current_user, currency_code, amount)
+
+    print(
+          f"Продажа выполнена: "
+          f"{result['amount']:.4f} "
+          f"{result['currency_code']} "
+          f"по курсу "
+          f"{result['rate']:.2f} "
+          f"{result['base_currency']}/"
+          f"{result['currency_code']}"
+         )
+
+    print("Изменения в портфеле:")
+
+    print(
+          f"- {result['currency_code']}: "
+          f"было {result['old_balance']:.4f} "
+          f"-> стало {result['new_balance']:.4f}"
+         )
+
+    print(
+          f"Оценочная выручка: "
+          f"{result['estimated_revenue']:,.2f} "
+          f"{result['base_currency']}"
+         )
+
+
 def _show_help() -> None:
     """Показать список доступных CLI-команд"""
 
@@ -192,6 +238,10 @@ def _show_help() -> None:
          )
     print(
           "  buy --currency <валюта> "
+          "--amount <количество>"
+         )
+    print(
+          "  sell --currency <валюта> "
           "--amount <количество>"
          )
     print("  help")
@@ -242,6 +292,9 @@ def run() -> None:
 
             elif command == "buy":
                 _handle_buy(arguments, current_user)
+
+            elif command == "sell":
+                _handle_sell(arguments, current_user)
 
             elif command == "help":
                 _show_help()
