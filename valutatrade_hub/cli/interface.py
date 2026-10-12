@@ -4,6 +4,7 @@ from prettytable import PrettyTable
 
 from valutatrade_hub.core.models import User
 from valutatrade_hub.core.usecases import (
+                                           buy,
                                            get_portfolio_summary,
                                            login,
                                            register,
@@ -128,6 +129,52 @@ def _handle_show_portfolio(tokens: list[str],
          )
 
 
+def _handle_buy(tokens: list[str],
+                current_user: User | None,
+               ) -> None:
+    """Обработка CLI-команды buy"""
+
+    if current_user is None:
+        raise ValueError("Сначала выполните login")
+
+    options = _parse_options(tokens)
+
+    currency_code = _require_option(options, "currency")
+    amount_text = _require_option(options, "amount")
+
+    try:
+        # CLI получает всё как текст, а buy() ожидает уже число
+        amount = float(amount_text)
+    except ValueError as error:
+        raise ValueError("'amount' должен быть положительным числом") from error
+
+    result = buy(current_user, currency_code, amount)
+
+    print(
+          f"Покупка выполнена: "
+          f"{result['amount']:.4f} "
+          f"{result['currency_code']} "
+          f"по курсу "
+          f"{result['rate']:.2f} "
+          f"{result['base_currency']}/"
+          f"{result['currency_code']}"
+         )
+
+    print("Изменения в портфеле:")
+
+    print(
+          f"- {result['currency_code']}: "
+          f"было {result['old_balance']:.4f} "
+          f"-> стало {result['new_balance']:.4f}"
+         )
+
+    print(
+          f"Оценочная стоимость покупки: "
+          f"{result['estimated_cost']:,.2f} "
+          f"{result['base_currency']}"
+         )
+
+
 def _show_help() -> None:
     """Показать список доступных CLI-команд"""
 
@@ -142,6 +189,10 @@ def _show_help() -> None:
          )
     print(
           "  show-portfolio [--base <валюта>]"
+         )
+    print(
+          "  buy --currency <валюта> "
+          "--amount <количество>"
          )
     print("  help")
     print("  exit")
@@ -188,6 +239,9 @@ def run() -> None:
 
             elif command == "show-portfolio":
                 _handle_show_portfolio(arguments, current_user)
+
+            elif command == "buy":
+                _handle_buy(arguments, current_user)
 
             elif command == "help":
                 _show_help()
