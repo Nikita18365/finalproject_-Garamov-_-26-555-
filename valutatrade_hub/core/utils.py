@@ -16,15 +16,15 @@ def load_json(file_path: Path) -> Any:
     """Загрузить данные из json-файла"""
     if not file_path.exists():
         raise FileNotFoundError(f"Файл не найден: {file_path}")
-    with file_path.open("r", encoding = "utf-8") as file:
+    with file_path.open("r", encoding="utf-8") as file:
         return json.load(file)
 
 
 def save_json(file_path: Path, data: Any) -> None:
     """Сохранить данные в JSON-файл."""
-    file_path.parent.mkdir(parents = True, exist_ok = True)
-    with file_path.open("w", encoding = "utf-8") as file:
-        json.dump(data, file, ensure_ascii = False, indent = 4)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with file_path.open("w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=4)
 
 
 def load_users() -> list[dict]:
