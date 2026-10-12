@@ -6,6 +6,7 @@ from valutatrade_hub.core.models import User
 from valutatrade_hub.core.usecases import (
                                            buy,
                                            get_portfolio_summary,
+                                           get_rate,
                                            login,
                                            register,
                                            sell,
@@ -36,6 +37,13 @@ def _parse_options(tokens: list[str]) -> dict[str, str]:
         index += 2
 
     return options
+
+
+def _format_rate(rate: float) -> str:
+    """Отформатированный валютный курс для CLI"""
+    if rate < 1:
+        return f"{rate:.8f}"
+    return f"{rate:.2f}"
 
 
 def _require_option(options: dict[str, str], name: str) -> str:
@@ -221,6 +229,32 @@ def _handle_sell(tokens: list[str],
          )
 
 
+def _handle_get_rate(tokens: list[str]) -> None:
+    """Обработка CLI-команды get-rate"""
+
+    options = _parse_options(tokens)
+    from_code = _require_option(options, "from")
+    to_code = _require_option(options, "to")
+    result = get_rate(from_code, to_code)
+    rate_text = _format_rate(result["rate"])
+    reverse_rate_text = _format_rate(result["reverse_rate"])
+
+    print(
+          f"Курс "
+          f"{result['from_currency']}->"
+          f"{result['to_currency']}: "
+          f"{rate_text} "
+          f"(обновлено: {result['updated_at']})"
+         )
+
+    print(
+          f"Обратный курс "
+          f"{result['to_currency']}->"
+          f"{result['from_currency']}: "
+          f"{reverse_rate_text}"
+         )
+
+
 def _show_help() -> None:
     """Показать список доступных CLI-команд"""
 
@@ -243,6 +277,10 @@ def _show_help() -> None:
     print(
           "  sell --currency <валюта> "
           "--amount <количество>"
+         )
+    print(
+          "  get-rate --from <валюта> "
+          "--to <валюта>"
          )
     print("  help")
     print("  exit")
@@ -295,6 +333,9 @@ def run() -> None:
 
             elif command == "sell":
                 _handle_sell(arguments, current_user)
+
+            elif command == "get-rate":
+                _handle_get_rate(arguments)
 
             elif command == "help":
                 _show_help()
