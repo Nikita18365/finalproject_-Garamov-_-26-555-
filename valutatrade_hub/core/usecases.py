@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from valutatrade_hub.core.decorators import log_action
 from valutatrade_hub.core.models import (
                                          DEFAULT_EXCHANGE_RATES,
                                          Portfolio,
@@ -212,7 +213,7 @@ def _get_exchange_rates() -> dict[str, float]:
 
 
 def get_portfolio_summary(user: User,
-                          base_currency: str = "USD",
+                          base_currency: str = "USD"
                          ) -> dict:
     """Получение информации о портфеле пользователя"""
     base_currency = normalize_currency_code(base_currency)
@@ -244,9 +245,10 @@ def get_portfolio_summary(user: User,
            }
 
 
+@log_action("BUY")
 def buy(user: User,
         currency_code: str,
-        amount: float,
+        amount: float
        ) -> dict:
     """Покупка валюты и обновление портфеля пользователя"""
 
@@ -285,9 +287,10 @@ def buy(user: User,
            }
 
 
+@log_action("SELL")
 def sell(user: User,
          currency_code: str,
-         amount: float,
+         amount: float
         ) -> dict:
     """Продажа валюты и обновление портфеля пользователя"""
 
@@ -331,7 +334,7 @@ def sell(user: User,
 
 
 def get_rate(from_code: str,
-             to_code: str,
+             to_code: str
             ) -> dict:
     """Получение текущего курса одной валюты к другой"""
     from_code = normalize_currency_code(from_code)
