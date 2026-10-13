@@ -26,3 +26,14 @@ module-root = ""
 dev = [
     "ruff>=0.16.10",
 ]
+
+[tool.valutatrade]
+users_path = "data/users.json"
+portfolios_path = "data/portfolios.json"
+rates_path = "data/rates.json"
+exchange_rates_path = "data/exchange_rates.json"
+rates_ttl_seconds = 300
+default_base_currency = "USD"
+log_path = "logs/actions.log"
+log_level = "INFO"
+log_format = "%(levelname)s %(asctime)s %(message)s"
