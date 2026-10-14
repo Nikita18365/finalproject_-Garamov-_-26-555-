@@ -102,7 +102,7 @@ def _handle_show_portfolio(tokens: list[str],
     options = _parse_options(tokens)
     base_currency = options.get("base", "USD")
     # CLI ничего не рассчитывает. Он поулчает подготовленные данные и оформляет их:
-    summary = get_portfolio_summary(current_user, base_currency)
+    summary = get_portfolio_summary(current_user.user_id, base_currency)
     # Бизнес-логика должна оставаться в usecases.py, а CLI только оркестрировать вызовы
     # и показывать результат
     base_currency = summary["base_currency"]
@@ -162,7 +162,7 @@ def _handle_buy(tokens: list[str],
     except ValueError as error:
         raise ValueError("'amount' должен быть положительным числом") from error
 
-    result = buy(current_user, currency_code, amount)
+    result = buy(current_user.user_id, currency_code, amount)
 
     print(
           f"Покупка выполнена: "
@@ -207,7 +207,7 @@ def _handle_sell(tokens: list[str],
     except ValueError as error:
         raise ValueError("'amount' должен быть положительным числом") from error
 
-    result = sell(current_user, currency_code, amount)
+    result = sell(current_user.user_id, currency_code, amount)
 
     print(
           f"Продажа выполнена: "

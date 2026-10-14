@@ -1,6 +1,8 @@
 from datetime import datetime
 
+from valutatrade_hub.core.currencies import get_currency
 from valutatrade_hub.core.decorators import log_action
+from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.core.models import (
                                          DEFAULT_EXCHANGE_RATES,
                                          Portfolio,
@@ -8,17 +10,14 @@ from valutatrade_hub.core.models import (
                                          Wallet,
                                         )
 from valutatrade_hub.core.utils import (
-                                        load_portfolios,
-                                        load_rates,
-                                        load_users,
                                         normalize_currency_code,
-                                        save_portfolios,
-                                        save_rates,
-                                        save_users,
                                         validate_amount,
                                        )
+from valutatrade_hub.infra.database import DatabaseManager
+from valutatrade_hub.infra.settings import SettingsLoader
 
-RATES_TTL_SECONDS = 300
+_DATABASE = DatabaseManager()
+_SETTINGS = SettingsLoader()
 
 
 # Функция нужна только внутри usecases.py, поэтому делаем её с "_%"
@@ -34,8 +33,20 @@ def _user_from_dict(user_data: dict) -> User:
                 username = user_data["username"],
                 hashed_password = user_data["hashed_password"],
                 salt = user_data["salt"],
-                registration_date = datetime.fromisoformat(user_data["registration_date"])
-               )
+                registration_date = datetime.fromisoformat(user_data["registration_date"]))
+
+
+def _get_user_by_id(user_id: int) -> User:
+    """Получение пользователя по идентификатору"""
+    if isinstance(user_id, bool) or not isinstance(user_id, int):
+        raise TypeError("'user_id' должен быть целым числом")
+    if user_id <= 0:
+        raise ValueError("'user_id' должен быть положительным")
+    users = _DATABASE.load_users()
+    for user_data in users:
+        if user_data["user_id"] == user_id:
+            return _user_from_dict(user_data)
+    raise ValueError(f"Пользователь с id={user_id} не найден")
 
 
 def _portfolio_from_dict(user: User,
@@ -54,11 +65,11 @@ def _portfolio_from_dict(user: User,
 
 def _save_user_portfolio(portfolio: Portfolio) -> None:
     """Сохранить изменённый портфель пользователя"""
-    portfolios = load_portfolios()
+    portfolios = _DATABASE.load_portfolios()
     for index, portfolio_data in enumerate(portfolios):
         if portfolio_data.get("user_id") == portfolio.user_id:
             portfolios[index] = portfolio.to_dict()
-            save_portfolios(portfolios)
+            _DATABASE.save_portfolios(portfolios)
             return
     raise ValueError("Портфель пользователя не найден")
 
@@ -71,7 +82,7 @@ def register(username: str, password: str) -> User:
     if not username:
         raise ValueError("Имя пользователя не может быть пустым")
 
-    users = load_users()
+    users = _DATABASE.load_users()
 
     for user_data in users:
         if user_data.get("username") == username:
@@ -89,13 +100,13 @@ def register(username: str, password: str) -> User:
                )
 
     portfolio = Portfolio(user_id = user.user_id, user = user,)
-    portfolios = load_portfolios()
+    portfolios = _DATABASE.load_portfolios()
 
     users.append(user.to_dict())
     portfolios.append(portfolio.to_dict())
 
-    save_users(users)
-    save_portfolios(portfolios)
+    _DATABASE.save_users(users)
+    _DATABASE.save_portfolios(portfolios)
 
     return user
 
@@ -113,7 +124,7 @@ def login(username: str, password: str) -> User:
     if not username:
         raise ValueError("Имя пользователя не может быть пустым")
 
-    users = load_users()
+    users = _DATABASE.load_users()
 
     for user_data in users:
         if user_data.get("username") != username:
@@ -129,18 +140,14 @@ def login(username: str, password: str) -> User:
     raise ValueError(f"Пользователь '{username}' не найден")
 
 
-def get_user_portfolio(user: User) -> Portfolio:
+def get_user_portfolio(user_id: int) -> Portfolio:
     """Получение портфеля пользователя"""
-    if not isinstance(user, User):
-        raise TypeError("user должен быть объектом User")
-
-    portfolios = load_portfolios()
-
+    user = _get_user_by_id(user_id)
+    portfolios = _DATABASE.load_portfolios()
     for portfolio_data in portfolios:
-        if portfolio_data.get("user_id") == user.user_id:
+        if portfolio_data["user_id"] == user.user_id:
             return _portfolio_from_dict(user, portfolio_data)
-
-    raise ValueError("Портфель пользователя не найден")
+    raise ValueError(f"Портфель пользователя с id={user_id} не найден")
 
 
 # Приложение сможет ответить на вопрос:
@@ -160,10 +167,16 @@ def _is_rates_cache_fresh(rates_data: dict) -> bool:
     if refresh_time.tzinfo is None:
         refresh_time = refresh_time.astimezone()
 
+    ttl_seconds = _SETTINGS.get("rates_ttl_seconds", 300)
+    if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, (int, float)):
+        raise TypeError("Настройка 'rates_ttl_seconds' должна быть числом")
+    if ttl_seconds <= 0:
+        raise ValueError("Настройка 'rates_ttl_seconds' должна быть положительной")
+
     now = datetime.now().astimezone()
     age_seconds = (now - refresh_time).total_seconds()
 
-    return 0 <= age_seconds < RATES_TTL_SECONDS
+    return 0 <= age_seconds < ttl_seconds
 
 
 def _refresh_rates_from_stub() -> dict:
@@ -185,15 +198,18 @@ def _refresh_rates_from_stub() -> dict:
                   "last_refresh": updated_at
                  }
 
-    save_rates(rates_data)
+    _DATABASE.save_rates(rates_data)
     return rates_data
 
 
 def _get_exchange_rates() -> dict[str, float]:
     """Получение курсов валют относительно USD"""
-    rates_data = load_rates()
+    rates_data = _DATABASE.load_rates()
     if not _is_rates_cache_fresh(rates_data):
-        rates_data = _refresh_rates_from_stub()
+        try:
+            rates_data = _refresh_rates_from_stub()
+        except Exception as error:
+            raise ApiRequestError("не удалось обновить валютные курсы") from error
     pairs = rates_data.get("pairs", {})
     exchange_rates = {"USD": 1.0}
     for pair_code, pair_data in pairs.items():
@@ -212,63 +228,72 @@ def _get_exchange_rates() -> dict[str, float]:
     return exchange_rates
 
 
-def get_portfolio_summary(user: User,
+def _get_usd_rate(currency_code: str,
+                  exchange_rates: dict[str, float]
+                 ) -> float:
+    """Получение курса валюты относительно USD"""
+    try:
+        return exchange_rates[currency_code]
+    except KeyError as error:
+        raise ApiRequestError(f"курс {currency_code}->USD недоступен") from error
+
+
+def get_portfolio_summary(user_id: int,
                           base_currency: str = "USD"
                          ) -> dict:
     """Получение информации о портфеле пользователя"""
+
     base_currency = normalize_currency_code(base_currency)
+    get_currency(base_currency)
     exchange_rates = _get_exchange_rates()
+    base_rate = _get_usd_rate(base_currency, exchange_rates)
 
-    if base_currency not in exchange_rates:
-        raise ValueError(f"Неизвестная базовая валюта '{base_currency}'")
-
-    portfolio = get_user_portfolio(user)
-
+    portfolio = get_user_portfolio(user_id)
+    user = portfolio.user
+    if user is None:
+        raise ValueError(f"Пользователь с id={user_id} не загружен")
     wallets_info = []
 
     for wallet in portfolio.wallets.values():
         currency_code = wallet.currency_code
-        if currency_code not in exchange_rates:
-            raise ValueError(f"Не найден курс для валюты '{currency_code}'")
-        value_usd = (wallet.balance * exchange_rates[currency_code])
-        value_in_base = (value_usd / exchange_rates[base_currency])
+        currency_rate = _get_usd_rate(currency_code, exchange_rates)
+        value_usd = (wallet.balance * currency_rate)
+        value_in_base = (value_usd / base_rate)
         wallets_info.append({
                              "currency_code": currency_code,
                              "balance": wallet.balance,
                              "value_in_base": value_in_base
                             })
 
-    return {"username": user.username,
+    total_value = portfolio.get_total_value(base_currency, rates = exchange_rates)
+    return {
+            "username": user.username,
             "base_currency": base_currency,
             "wallets": wallets_info,
-            "total_value": portfolio.get_total_value(base_currency, rates = exchange_rates)
+            "total_value": total_value
            }
 
 
 @log_action("BUY")
-def buy(user: User,
+def buy(user_id: int,
         currency_code: str,
         amount: float
        ) -> dict:
     """Покупка валюты и обновление портфеля пользователя"""
 
-    if not isinstance(user, User):
-        raise TypeError("user должен быть объектом User")
-
     currency_code = normalize_currency_code(currency_code)
     amount = validate_amount(amount)
+    get_currency(currency_code)
 
-    if currency_code not in DEFAULT_EXCHANGE_RATES:
-        raise ValueError(f"Не удалось получить курс для {currency_code} -> USD")
-
-    portfolio = get_user_portfolio(user)
+    portfolio = get_user_portfolio(user_id)
     wallet = portfolio.get_wallet(currency_code)
 
     if wallet is None:
         wallet = portfolio.add_currency(currency_code)
 
     old_balance = wallet.balance
-    rate = DEFAULT_EXCHANGE_RATES[currency_code]
+    exchange_rates = _get_exchange_rates()
+    rate = _get_usd_rate(currency_code, exchange_rates)
 
     wallet.deposit(amount)
 
@@ -283,27 +308,22 @@ def buy(user: User,
             "base_currency": "USD",
             "old_balance": old_balance,
             "new_balance": new_balance,
-            "estimated_cost": estimated_cost,
+            "estimated_cost": estimated_cost
            }
 
 
 @log_action("SELL")
-def sell(user: User,
+def sell(user_id: int,
          currency_code: str,
          amount: float
         ) -> dict:
     """Продажа валюты и обновление портфеля пользователя"""
 
-    if not isinstance(user, User):
-        raise TypeError("user должен быть объектом User")
-
     currency_code = normalize_currency_code(currency_code)
     amount = validate_amount(amount)
+    get_currency(currency_code)
 
-    if currency_code not in DEFAULT_EXCHANGE_RATES:
-        raise ValueError(f"Не удалось получить курс для {currency_code} -> USD")
-
-    portfolio = get_user_portfolio(user)
+    portfolio = get_user_portfolio(user_id)
     wallet = portfolio.get_wallet(currency_code)
 
     if wallet is None:
@@ -314,7 +334,9 @@ def sell(user: User,
                         )
 
     old_balance = wallet.balance
-    rate = DEFAULT_EXCHANGE_RATES[currency_code]
+
+    exchange_rates = _get_exchange_rates()
+    rate = _get_usd_rate(currency_code, exchange_rates)
 
     wallet.withdraw(amount)
 
@@ -339,21 +361,19 @@ def get_rate(from_code: str,
     """Получение текущего курса одной валюты к другой"""
     from_code = normalize_currency_code(from_code)
     to_code = normalize_currency_code(to_code)
+
+    get_currency(from_code)
+    get_currency(to_code)
+
     exchange_rates = _get_exchange_rates()
 
-    if from_code not in exchange_rates or to_code not in exchange_rates:
-        raise ValueError(
-                         f"Курс {from_code} -> {to_code} недоступен. "
-                         "Повторите попытку позже"
-                        )
-
-    from_usd_rate = exchange_rates[from_code]
-    to_usd_rate = exchange_rates[to_code]
+    from_usd_rate = _get_usd_rate(from_code, exchange_rates)
+    to_usd_rate = _get_usd_rate(to_code, exchange_rates)
 
     rate = from_usd_rate / to_usd_rate
     reverse_rate = to_usd_rate / from_usd_rate
 
-    rates_data = load_rates()
+    rates_data = _DATABASE.load_rates()
 
     return {
             "from_currency": from_code,
