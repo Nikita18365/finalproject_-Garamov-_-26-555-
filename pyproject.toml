@@ -40,3 +40,14 @@ log_level = "INFO"
 log_format = "%(levelname)s %(asctime)s %(message)s"
 log_max_bytes = 1048576
 log_backup_count = 3
+
+parser_log_path = "logs/parser.log"
+parser_log_level = "DEBUG"
+parser_log_max_bytes = 1048576
+parser_log_backup_count = 3
+
+coingecko_base_url = "https://api.coingecko.com/api/v3"
+exchange_rate_base_url = "https://v6.exchangerate-api.com/v6"
+
+request_timeout_seconds = 10
+parser_update_interval_seconds = 300
