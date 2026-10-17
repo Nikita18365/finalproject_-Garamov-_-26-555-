@@ -4,7 +4,6 @@ from valutatrade_hub.core.currencies import get_currency
 from valutatrade_hub.core.decorators import log_action
 from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.core.models import (
-                                         DEFAULT_EXCHANGE_RATES,
                                          Portfolio,
                                          User,
                                          Wallet,
@@ -15,6 +14,7 @@ from valutatrade_hub.core.utils import (
                                        )
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
+from valutatrade_hub.parser.updater import RatesUpdater
 
 _DATABASE = DatabaseManager()
 _SETTINGS = SettingsLoader()
@@ -179,52 +179,37 @@ def _is_rates_cache_fresh(rates_data: dict) -> bool:
     return 0 <= age_seconds < ttl_seconds
 
 
-def _refresh_rates_from_stub() -> dict:
-    """Обновление кэша фиксированными курсами-заглушками"""
-    updated_at = datetime.now().astimezone().isoformat()
-
-    pairs = {}
-    for currency_code, rate in DEFAULT_EXCHANGE_RATES.items():
-        if currency_code == "USD":
-            continue
-        pairs[f"{currency_code}_USD"] = {
-                                         "rate": rate,
-                                         "updated_at": updated_at,
-                                         "source": "Stub"
-                                        }
-
-    rates_data = {
-                  "pairs": pairs,
-                  "last_refresh": updated_at
-                 }
-
-    _DATABASE.save_rates(rates_data)
-    return rates_data
-
-
+# RatesUpdater->RatesStorage->rates.json
+# CoinGecko упал, ExchangeRate-API работает, run_update() завершается
+# Также наоборот
+# Если оба упали то ApiRequestError
 def _get_exchange_rates() -> dict[str, float]:
     """Получение курсов валют относительно USD"""
     rates_data = _DATABASE.load_rates()
     if not _is_rates_cache_fresh(rates_data):
-        try:
-            rates_data = _refresh_rates_from_stub()
-        except Exception as error:
-            raise ApiRequestError("не удалось обновить валютные курсы") from error
+        updater = RatesUpdater()
+        updater.run_update()
+        rates_data = _DATABASE.load_rates()
+
     pairs = rates_data.get("pairs", {})
     exchange_rates = {"USD": 1.0}
+
     for pair_code, pair_data in pairs.items():
         if not pair_code.endswith("_USD"):
             continue
-        currency_code = pair_code.removesuffix("_USD")
         if not isinstance(pair_data, dict):
             continue
         rate = pair_data.get("rate")
-        if (isinstance(rate, bool)
+        if (
+            isinstance(rate, bool)
             or not isinstance(rate, (int, float))
             or rate <= 0
            ):
             continue
+
+        currency_code = pair_code.removesuffix("_USD")
         exchange_rates[currency_code] = float(rate)
+
     return exchange_rates
 
 
@@ -274,6 +259,8 @@ def get_portfolio_summary(user_id: int,
            }
 
 
+# buy->_get_exchange_rates->проверка TTL->если свежий->читаем кеш->
+# если старый->RatesUpdater->реальный курс
 @log_action("BUY")
 def buy(user_id: int,
         currency_code: str,
