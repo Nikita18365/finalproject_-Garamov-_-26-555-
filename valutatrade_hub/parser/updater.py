@@ -92,9 +92,13 @@ class RatesUpdater:
         except ApiRequestError as error:
             # logger.exception() внутри except автоматически записывает traceback
             # В консоль пойдет "ERROR: Не удалось получить данные из"
-            self._logger.exception("Не удалось получить данные из %s",
-                                   source_name
-                                  )
+            self._logger.error("Не удалось получить данные из %s",
+                               source_name
+                              )
+            self._logger.debug("Подробности ошибки при получении данных из %s",
+                               source_name,
+                               exc_info = True
+                              )
             errors.append(f"{source_name}: {error}")
             return
 

@@ -16,6 +16,8 @@ from valutatrade_hub.core.usecases import (
                                            register,
                                            sell,
                                           )
+from valutatrade_hub.infra.logging_config import parser_console_logging
+from valutatrade_hub.parser.updater import RatesUpdater
 
 
 def _parse_options(tokens: list[str]) -> dict[str, str]:
@@ -287,6 +289,7 @@ def _show_help() -> None:
           "  get-rate --from <валюта> "
           "--to <валюта>"
          )
+    print("  update-rates")
     print("  help")
     print("  exit")
 
@@ -341,6 +344,32 @@ def run() -> None:
 
             elif command == "get-rate":
                 _handle_get_rate(arguments)
+
+            # update-rates->проверить, что нет аргументов->
+            # RatesUpdater()->with parser_console_logging()->
+            # run_update()->посмотреть result["errors"]->
+            # print(итог)
+            elif command == "update-rates":
+                if arguments:
+                    raise ValueError("Команда update-rates не принимает аргументы")
+                updater = RatesUpdater()
+                with parser_console_logging():
+                    result = updater.run_update()
+                errors = result["errors"]
+                if errors:
+                    print(
+                          "Обновление завершено с ошибками. "
+                          "Подробности смотрите в logs/parser.log"
+                         )
+                else:
+                    print(
+                          "Курсы успешно обновлены: "
+                          f"{result['updated_count']}."
+                         )
+                print(
+                      "Время обновления: "
+                      f"{result['last_refresh']}"
+                     )
 
             elif command == "help":
                 _show_help()
