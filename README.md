@@ -193,6 +193,8 @@ ValutaTrade Hub
 >
 ```
 
+[![asciicast](https://asciinema.org/a/1mbdfhIDZlCIoGWK.svg)](https://asciinema.org/a/1mbdfhIDZlCIoGWK)
+
 ## CLI-команды
 
 Получить список команд:
@@ -235,6 +237,8 @@ show-portfolio --base EUR
 
 Результат выводится через PrettyTable.
 
+[![asciicast](https://asciinema.org/a/Nv0CG7Wvbc5cNZXF.svg)](https://asciinema.org/a/Nv0CG7Wvbc5cNZXF)
+
 ### Покупка валюты
 
 ```text
@@ -273,6 +277,8 @@ get-rate --from BTC --to USD
 ```text
 show-rates
 ```
+
+[![asciicast](https://asciinema.org/a/G72JTXwIHYNVIxi6.svg)](https://asciinema.org/a/G72JTXwIHYNVIxi6)
 
 Команда выводит текущий кеш в виде таблицы с:
 
