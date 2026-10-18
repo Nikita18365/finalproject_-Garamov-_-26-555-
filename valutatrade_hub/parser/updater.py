@@ -1,5 +1,5 @@
 # Обновление валютных курсов через внешние API
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from valutatrade_hub.core.exceptions import ApiRequestError
@@ -55,12 +55,15 @@ class RatesUpdater:
             raise ApiRequestError("не удалось получить курсы "
                                   "ни от одного внешнего API"
                                  )
-         # До этого места RatesStorage ещё не вызывался
-         # Поэтому старый rates.json не будет затёрт пустым объектом
+        # До этого места RatesStorage ещё не вызывался
+        # Поэтому старый rates.json не будет затёрт пустым объектом
 
-        updated_at = datetime.now().astimezone().isoformat()
-
-        rates_data = self._build_snapshot(collected_rates = collected_rates, updated_at = updated_at)
+        updated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        current_rates = self._storage.load_current_rates()
+        rates_data = self._build_snapshot(collected_rates = collected_rates,
+                                          current_rates   = current_rates,
+                                          updated_at      = updated_at
+                                         )
         self._storage.save_current_rates(rates_data)
         history_added = (self._storage.append_history(rates_data))
 
@@ -112,13 +115,24 @@ class RatesUpdater:
                          )
 
     @staticmethod
-    def _build_snapshot(collected_rates: dict[str, tuple[float, str]], 
-                        updated_at: str) -> dict[str, Any]:
+    def _build_snapshot(collected_rates: dict[str, tuple[float, str]],
+                        current_rates: dict[str, Any],
+                        updated_at: str
+                       ) -> dict[str, Any]:
         """Построение снимка для rates.json"""
-        pairs = {}
+        current_pairs = current_rates.get("pairs", {})
+        if not isinstance(current_pairs, dict):
+            current_pairs = {}
+
+        pairs = {pair_code: pair_data.copy()
+                 for pair_code, pair_data in current_pairs.items()
+                 if isinstance(pair_data, dict)
+                }
+
         for (pair_code, (rate, source)) in collected_rates.items():
             pairs[pair_code] = {"rate": rate,
                                 "updated_at": updated_at,
                                 "source": source
                                }
+
         return {"pairs": pairs, "last_refresh": updated_at}

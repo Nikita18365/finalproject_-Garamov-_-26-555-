@@ -1,4 +1,5 @@
 import shlex
+from datetime import datetime
 
 from prettytable import PrettyTable
 
@@ -15,9 +16,20 @@ from valutatrade_hub.core.usecases import (
                                            login,
                                            register,
                                            sell,
+                                           show_rates,
                                           )
 from valutatrade_hub.infra.logging_config import parser_console_logging
 from valutatrade_hub.parser.updater import RatesUpdater
+
+
+def _format_datetime(value: str | None) -> str:
+    """Преобразование ISO-время в читаемый формат для таблицы"""
+    if not value:
+        return "-"
+
+    parsed = datetime.fromisoformat(value)
+
+    return parsed.strftime("%d.%m.%Y %H:%M:%S UTC")
 
 
 def _parse_options(tokens: list[str]) -> dict[str, str]:
@@ -289,6 +301,7 @@ def _show_help() -> None:
           "  get-rate --from <валюта> "
           "--to <валюта>"
          )
+    print("  show-rates [--top <N>]")
     print("  update-rates")
     print("  help")
     print("  exit")
@@ -344,6 +357,42 @@ def run() -> None:
 
             elif command == "get-rate":
                 _handle_get_rate(arguments)
+
+            elif command == "show-rates":
+                options = _parse_options(arguments)
+                allowed_options = {"top"}
+                unexpected = set(options) - allowed_options
+
+                if unexpected:
+                    option = next(iter(unexpected))
+                    raise ValueError(f"Неизвестный аргумент '--{option}'")
+
+                top = None
+                if "top" in options:
+                    try:
+                        top = int(options["top"])
+                    except ValueError as error:
+                        raise ValueError("'--top' должен быть целым числом") from error
+
+                result = show_rates(top = top)
+                table = PrettyTable()
+                table.field_names = ["Валюта",
+                                     "Курс к USD",
+                                     "Источник",
+                                     "Обновлено"
+                                    ]
+
+                for rate_info in result["rates"]:
+                    table.add_row([rate_info["currency_code"],
+                                   f"{rate_info['rate']:.8f}",
+                                      rate_info["source"],
+                                      _format_datetime(rate_info["updated_at"])
+                                     ])
+
+                print(table)
+                print("Последнее обновление кеша: "
+                      f"{_format_datetime(result['last_refresh'])}"
+                     )
 
             # update-rates->проверить, что нет аргументов->
             # RatesUpdater()->with parser_console_logging()->

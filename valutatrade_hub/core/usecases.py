@@ -1,17 +1,10 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
-from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.currencies import CryptoCurrency, get_currency
 from valutatrade_hub.core.decorators import log_action
-from valutatrade_hub.core.exceptions import ApiRequestError
-from valutatrade_hub.core.models import (
-                                         Portfolio,
-                                         User,
-                                         Wallet,
-                                        )
-from valutatrade_hub.core.utils import (
-                                        normalize_currency_code,
-                                        validate_amount,
-                                       )
+from valutatrade_hub.core.exceptions import ApiRequestError, CurrencyNotFoundError
+from valutatrade_hub.core.models import Portfolio, User, Wallet
+from valutatrade_hub.core.utils import normalize_currency_code, validate_amount
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
 from valutatrade_hub.parser.updater import RatesUpdater
@@ -165,7 +158,7 @@ def _is_rates_cache_fresh(rates_data: dict) -> bool:
         return False
 
     if refresh_time.tzinfo is None:
-        refresh_time = refresh_time.astimezone()
+        refresh_time = refresh_time.replace(tzinfo = UTC)
 
     ttl_seconds = _SETTINGS.get("rates_ttl_seconds", 300)
     if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, (int, float)):
@@ -173,7 +166,7 @@ def _is_rates_cache_fresh(rates_data: dict) -> bool:
     if ttl_seconds <= 0:
         raise ValueError("Настройка 'rates_ttl_seconds' должна быть положительной")
 
-    now = datetime.now().astimezone()
+    now = datetime.now(UTC)
     age_seconds = (now - refresh_time).total_seconds()
 
     return 0 <= age_seconds < ttl_seconds
@@ -368,4 +361,68 @@ def get_rate(from_code: str,
             "rate": rate,
             "reverse_rate": reverse_rate,
             "updated_at": rates_data.get("last_refresh")
+           }
+
+
+# show-rates->rates.json->кеш свежий?->
+# если да->читаем             
+# если нет->RatesUpdater->снова читаем->таблица
+# Логика такая должна быть, судя по чату в телемосте
+# В самом задании всё расплывчато
+def show_rates(top: int | None = None) -> dict:
+    """Получение актуальных курсов для отображения"""
+    if top is not None:
+        if isinstance(top, bool) or not isinstance(top, int):
+            raise TypeError("'top' должен быть целым числом")
+        if top <= 0:
+            raise ValueError("'top' должен быть положительным")
+
+    rates_data = _DATABASE.load_rates()
+
+    if not _is_rates_cache_fresh(rates_data):
+        updater = RatesUpdater()
+        updater.run_update()
+        rates_data = _DATABASE.load_rates()
+
+    pairs = rates_data.get("pairs", {})
+
+    if not isinstance(pairs, dict):
+        raise TypeError("Некорректный формат кеша валютных курсов")
+
+    rates = []
+
+    for pair_code, pair_data in pairs.items():
+        if not isinstance(pair_data, dict):
+            continue
+        if not pair_code.endswith("_USD"):
+            continue
+
+        currency_code = pair_code.removesuffix("_USD")
+        try:
+            currency = get_currency(currency_code)
+        except CurrencyNotFoundError:
+            continue
+
+        rate = pair_data.get("rate")
+        if (
+            isinstance(rate, bool)
+            or not isinstance(rate, (int, float))
+            or rate <= 0
+           ):
+            continue
+
+        rates.append({"currency_code": currency_code,
+                      "rate": float(rate),
+                      "updated_at": pair_data.get("updated_at"),
+                      "source": pair_data.get("source"),
+                      "is_crypto": isinstance(currency, CryptoCurrency),
+                     })
+
+    if top is not None:
+        rates = [item for item in rates if item["is_crypto"]]
+        rates.sort(key = lambda item: item["rate"], reverse = True)
+        rates = rates[:top]
+
+    return {"rates": rates,
+            "last_refresh": rates_data.get("last_refresh")
            }
