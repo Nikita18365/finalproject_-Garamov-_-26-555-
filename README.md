@@ -1,5 +1,7 @@
 # ValutaTrade Hub
 
+[![CI](https://github.com/Nikita18365/finalproject_-Garamov-_-26-555-/actions/workflows/ci.yml/badge.svg)](https://github.com/Nikita18365/finalproject_-Garamov-_-26-555-/actions/workflows/ci.yml)
+
 Консольное Python-приложение для работы с виртуальным валютным портфелем и актуальными курсами валют. Проект реализован в рамках итоговой работы по дисциплине «Программирование на Python».
 
 ## Возможности
